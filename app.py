@@ -4,19 +4,18 @@ from datetime import datetime
 
 import requests
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app)
 
-# Load secrets from Render Environment Variables
 CONSUMER_KEY = os.getenv("CONSUMER_KEY")
 CONSUMER_SECRET = os.getenv("CONSUMER_SECRET")
 SHORTCODE = os.getenv("BUSINESS_SHORTCODE", "4567573")
 PASSKEY = os.getenv("PASSKEY")
 CALLBACK_URL = os.getenv("CALLBACK_URL")
 
-# Temporary storage for payment status
 payments = {}
-
 
 def format_phone(phone: str) -> str:
     phone = str(phone).strip().replace(" ", "")
@@ -26,7 +25,6 @@ def format_phone(phone: str) -> str:
         return phone[1:]
     return phone
 
-
 def get_access_token():
     if not CONSUMER_KEY or not CONSUMER_SECRET:
         raise ValueError("Missing CONSUMER_KEY or CONSUMER_SECRET")
@@ -34,9 +32,7 @@ def get_access_token():
     url = "https://api.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials"
     response = requests.get(url, auth=(CONSUMER_KEY, CONSUMER_SECRET), timeout=30)
     response.raise_for_status()
-    data = response.json()
-    return data.get("access_token")
-
+    return response.json().get("access_token")
 
 @app.route("/", methods=["GET"])
 def home():
@@ -44,7 +40,6 @@ def home():
         "success": True,
         "message": "Hopestone backend running"
     })
-
 
 @app.route("/stkpush", methods=["POST"])
 def stk_push():
@@ -64,10 +59,16 @@ def stk_push():
         if not PASSKEY or not CALLBACK_URL:
             return jsonify({
                 "success": False,
-                "message": "Missing PASSKEY or CALLBACK_URL in environment variables"
+                "message": "Missing PASSKEY or CALLBACK_URL"
             }), 500
 
         access_token = get_access_token()
+        if not access_token:
+            return jsonify({
+                "success": False,
+                "message": "Failed to get access token"
+            }), 500
+
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
         password = base64.b64encode(
             (SHORTCODE + PASSKEY + timestamp).encode("utf-8")
@@ -121,7 +122,6 @@ def stk_push():
             "message": str(e)
         }), 500
 
-
 @app.route("/callback", methods=["POST"])
 def callback():
     try:
@@ -168,7 +168,6 @@ def callback():
             "ResultDesc": str(e)
         }), 500
 
-
 @app.route("/payment-status/<order_id>", methods=["GET"])
 def payment_status(order_id):
     record = payments.get(order_id)
@@ -183,7 +182,6 @@ def payment_status(order_id):
         "success": True,
         "payment": record
     })
-
 
 if __name__ == "__main__":
     app.run(debug=True)
