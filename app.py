@@ -78,15 +78,24 @@ def callback():
 
     try:
         stk = data["Body"]["stkCallback"]
-        order_id = stk["CallbackMetadata"]["Item"][0]["Value"]
+        result_code = stk["ResultCode"]
 
-        if stk["ResultCode"] == 0:
-            payments[order_id]["status"] = "PAID"
-        else:
-            payments[order_id]["status"] = "FAILED"
+        items = stk.get("CallbackMetadata", {}).get("Item", [])
 
-    except:
-        pass
+        order_id = None
+
+        for item in items:
+            if item.get("Name") == "AccountReference":
+                order_id = item.get("Value")
+
+        if order_id and order_id in payments:
+            if result_code == 0:
+                payments[order_id]["status"] = "PAID"
+            else:
+                payments[order_id]["status"] = "FAILED"
+
+    except Exception as e:
+        print("Callback error:", e)
 
     return jsonify({"ResultCode": 0, "ResultDesc": "Accepted"})
 
