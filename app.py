@@ -58,11 +58,12 @@ def pay():
     response = requests.post(url, json=payload, headers=headers)
     result = response.json()
 
-    payments[order_id] = {
-        "status": "PENDING",
-        "phone": phone,
-        "amount": amount
-    }
+   payments[order_id] = {
+    "status": "PENDING",
+    "phone": phone,
+    "amount": amount,
+    "checkout_request_id": result.get("CheckoutRequestID")
+}
 
     return jsonify({
         "success": True,
@@ -78,21 +79,16 @@ def callback():
 
     try:
         stk = data["Body"]["stkCallback"]
-        result_code = stk["ResultCode"]
+        result_code = stk.get("ResultCode")
+        checkout_request_id = stk.get("CheckoutRequestID")
 
-        items = stk.get("CallbackMetadata", {}).get("Item", [])
-
-        order_id = None
-
-        for item in items:
-            if item.get("Name") == "AccountReference":
-                order_id = item.get("Value")
-
-        if order_id and order_id in payments:
-            if result_code == 0:
-                payments[order_id]["status"] = "PAID"
-            else:
-                payments[order_id]["status"] = "FAILED"
+        for order_id, record in payments.items():
+            if record.get("checkout_request_id") == checkout_request_id:
+                if result_code == 0:
+                    record["status"] = "PAID"
+                else:
+                    record["status"] = "FAILED"
+                break
 
     except Exception as e:
         print("Callback error:", e)
