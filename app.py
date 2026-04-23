@@ -4,9 +4,10 @@ from datetime import datetime
 
 import requests
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 
 app = Flask(__name__)
-
+CORS(app)
 # Uses your existing Render environment variables
 CONSUMER_KEY = os.getenv("CONSUMER_KEY")
 CONSUMER_SECRET = os.getenv("CONSUMER_SECRET")
