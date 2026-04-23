@@ -1,35 +1,38 @@
-import requests
+import os
 import base64
+import requests
 from datetime import datetime
 from flask import Flask, request, jsonify
-import os
 
 app = Flask(__name__)
 
-SHORTCODE = "4567769"  # Paybill
-TILL = "5402532"       # Buy Goods Till
-PASSKEY = os.getenv("PASSKEY")
-CONSUMER_KEY = os.getenv("CONSUMER_KEY")
-CONSUMER_SECRET = os.getenv("CONSUMER_SECRET")
-CALLBACK_URL = os.getenv("CALLBACK_URL")
+# 🔑 YOUR SAFARICOM DETAILS (PUT YOUR REAL VALUES)
+CONSUMER_KEY = "KmPlf9xIKBpZShAF9pBNo7a9YQRAxaVf0yje6Hi0RdjGyM6H"
+CONSUMER_SECRET = "ZryQKUUnpjCJYdA0xh7xC7nZQDIUYrlrjjcBmOProRSti6HymmGXEjXixbL2BjHG"
+SHORTCODE = "4567769"
+PASSKEY = "b4dca8192ffa29e2c154b757256c120eddca0bd824b88efd6b8098958f459c91"
+CALLBACK_URL = "https://hopestone-backend.onrender.com/callback"
 
+payments = {}
 
+# 🔐 GET ACCESS TOKEN
 def get_access_token():
     url = "https://api.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials"
     response = requests.get(url, auth=(CONSUMER_KEY, CONSUMER_SECRET))
     return response.json().get("access_token")
 
 
-@app.route("/pay")
-def stk_push():
+# 🚀 STK PUSH
+@app.route("/pay", methods=["GET"])
+def pay():
     phone = request.args.get("phone")
-    amount = request.args.get("amount")
-    order_id = request.args.get("order_id", "test123")
-
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    password = base64.b64encode((SHORTCODE + PASSKEY + timestamp).encode()).decode()
+    amount = int(request.args.get("amount"))
+    order_id = request.args.get("order_id")
 
     access_token = get_access_token()
+
+    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+    password = base64.b64encode((SHORTCODE + PASSKEY + timestamp).encode()).decode()
 
     url = "https://api.safaricom.co.ke/mpesa/stkpush/v1/processrequest"
 
@@ -43,9 +46,9 @@ def stk_push():
         "Password": password,
         "Timestamp": timestamp,
         "TransactionType": "CustomerBuyGoodsOnline",
-        "Amount": int(amount),
+        "Amount": amount,
         "PartyA": phone,
-        "PartyB": TILL,
+        "PartyB": "5402532",  # YOUR TILL NUMBER
         "PhoneNumber": phone,
         "CallBackURL": CALLBACK_URL,
         "AccountReference": order_id,
@@ -53,7 +56,63 @@ def stk_push():
     }
 
     response = requests.post(url, json=payload, headers=headers)
-    return jsonify(response.json())
+    result = response.json()
+
+    payments[order_id] = {
+        "status": "PENDING",
+        "phone": phone,
+        "amount": amount
+    }
+
+    return jsonify({
+        "success": True,
+        "message": "STK Push sent",
+        "data": result
+    })
+
+
+# 🔔 CALLBACK FROM SAFARICOM
+@app.route("/callback", methods=["POST"])
+def callback():
+    data = request.json
+
+    try:
+        stk = data["Body"]["stkCallback"]
+        order_id = stk["CallbackMetadata"]["Item"][0]["Value"]
+
+        if stk["ResultCode"] == 0:
+            payments[order_id]["status"] = "PAID"
+        else:
+            payments[order_id]["status"] = "FAILED"
+
+    except:
+        pass
+
+    return jsonify({"ResultCode": 0, "ResultDesc": "Accepted"})
+
+
+# 📊 CHECK PAYMENT STATUS
+@app.route("/payment-status/<order_id>", methods=["GET"])
+def payment_status(order_id):
+    if order_id in payments:
+        return jsonify({
+            "success": True,
+            "data": payments[order_id]
+        })
+    else:
+        return jsonify({
+            "success": False,
+            "message": "Order not found"
+        }), 404
+
+
+# 🟢 HOME
+@app.route("/")
+def home():
+    return jsonify({
+        "message": "Hopestone backend running",
+        "success": True
+    })
 
 
 if __name__ == "__main__":
